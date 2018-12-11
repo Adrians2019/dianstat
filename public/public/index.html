@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Welcome to DApp</title>
+
+    <!-- update the version number as needed -->
+    <script defer src="/__/firebase/5.5.6/firebase-app.js"></script>
+    <!-- include only the Firebase features as you need -->
+    <script defer src="/__/firebase/5.5.6/firebase-auth.js"></script>
+    <script defer src="/__/firebase/5.5.6/firebase-database.js"></script>
+    <script defer src="/__/firebase/5.5.6/firebase-messaging.js"></script>
+    <script defer src="/__/firebase/5.5.6/firebase-storage.js"></script>
+    <!-- initialize the SDK after all desired features are loaded -->
+    <script defer src="/__/firebase/init.js"></script>
+
+    <script src="js/jquery.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy"
+crossorigin="anonymous"></script>
+
+
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO"
+    crossorigin="anonymous">
+    <link rel="stylesheet" href="style/mystyle.css">
+  </head>
+  <body>
+      <div id="gameContainer" style="width: 960px; height: 600px"></div>
+      <input type="file" id="doUpload" class="hideme"/>
+      <div id="csvexport"  class="hideme">
+        hello there
+      </div>
+      <button id="doTest" class="hideme" onclick="">Test</button>
+
+    <script>
+      // class="hideme"
+      // $(document).ready(function () {});
+
+      var destroyClickedElement = (event) => document.body.removeChild(event.target);
+
+      var authVerification = () => {
+        if(!firebase){
+          alert('Server not ready! Please check internet connection');
+          return;
+        }
+        let user = firebase.auth().currentUser;
+        if (!user) {
+          alert('Please first login!');
+          return;
+        }
+      };
+
+      var exportRegionsToCSV = ()=>{
+        authVerification();
+
+        firebase.database().ref().child('/DA/regions_name').orderByKey()
+        .once('value', snap=>{
+          if("null" === JSON.stringify(snap)) return;// todo: err handling, reporting
+          let item = "#,ID,A1 (mm),A2 (mm),B1 (mm),B2 (mm),C1 (mm),C2 (mm),D1 (mm),D2 (mm),E1 ,E2 ";
+          item += '\r\n';
+          let iCounter = 1;
+          snap.forEach(function(child) {
+            item +=  `${(iCounter++)} ,`+ child.key 
+              +','+ child.val()._a1m +','+ child.val()._a2m
+              +','+ child.val()._b1m +','+ child.val()._b2m
+              +','+ child.val()._c1m +','+ child.val()._c2m
+              +','+ child.val()._d1m +','+ child.val()._d2m
+              +','+ child.val()._e1 +','+ child.val()._e2;
+            item += '\r\n';
+          });
+          var textToSave = item;
+          var textToSaveAsBlob = new Blob([textToSave], {type:"text/plain"});
+          var textToSaveAsURL = window.URL.createObjectURL(textToSaveAsBlob);
+          var d = new Date();
+          var fileNameToSaveAs = `${d.getFullYear()}_${(d.getMonth()+1)}_${d.getDate()}_${Date.now()}`;
+          var downloadLink = document.createElement("a");
+          downloadLink.download = fileNameToSaveAs;
+          downloadLink.innerHTML = "Download File";
+          downloadLink.href = textToSaveAsURL;
+          downloadLink.onclick = destroyClickedElement;
+          downloadLink.style.display = "none";
+          document.body.appendChild(downloadLink);
+
+          downloadLink.click();
+        });
+      };
+
+      var reqDeleteRegionByName = (rName) => {
+        authVerification();
+        firebase.database().ref().child('/DA/regions_name').orderByKey().equalTo(rName)
+          .once('value', snap=>{
+            if("null" === JSON.stringify(snap)) return;// todo: err handling, reporting
+            snap.forEach(function(child) {
+              child.ref.remove();
+            });
+          });
+      };
+
+      var reqDeleteImgByDateKey = (imgDateKey) => {
+        // the date-key is date, orderByKey orders it min to max, where max is last date unit sampled
+        // unit query that provides unit magnitude for the app also obtains latest date unit sample
+        let _imgUrl='', img_dkey='', img_name='';
+          firebase.database().ref().child('/DA/img_date').orderByKey().equalTo(imgDateKey)
+          .once('value', snap=>{
+              if("null" === JSON.stringify(snap)) return;// todo: err handling
+              let img_items = [];
+              snap.forEach(x => {
+                let aurl = x.val().url.replace("https://firebasestorage.googleapis.com", "")
+                let img_name = x.val().img_name;
+                let obj = {"url":aurl, "date":x.key, img_name};
+                img_items.push(obj);
+              });
+              if(!img_items.length>0) return;// todo: err handling
+              _imgUrl = img_items[0].url;// for regions_name delete
+              img_dkey = img_items[0].date;// for img_date delete
+              img_name = img_items[0].img_name;// for storage delete
+              // todo: check for url correctness, dkey and name
+              firebase.database().ref('/DA/unit_date').orderByKey().limitToLast(1)
+                .once("value", snap=>{
+                  let _url = '';
+                  snap.forEach(x => {
+                    _url = x.val()._url.replace("https://firebasestorage.googleapis.com", "")
+                  });
+                  if(_url === _imgUrl){
+                    return;
+                  }
+                  else
+                  {
+                    // to be deleted, from db: img, reg, unit, from storage: img-file
+
+                    ///////////////////////////
+                    ////////  Del Unit     ////
+                    ///////////////////////////
+                    firebase.database().ref('/DA/unit_date').orderByChild('_url').equalTo(_imgUrl)
+                    .once('value', snap=>{
+                      if("null" === JSON.stringify(snap)) {
+                        // todo: err handling, reporting
+                        console.log("null Unit to delete");
+                      }
+                      else
+                      {
+                        snap.forEach(function(child) {
+                          child.ref.remove();
+                        });                        
+                      }
+                    });   
+
+                    ///////////////////////////
+                    ////////  Del: Region  ////
+                    ///////////////////////////                 
+                    firebase.database().ref('/DA/regions_name').orderByChild('_imgUrl').equalTo(_imgUrl)
+                    .once('value', snap=>{
+                      if("null" === JSON.stringify(snap)) {
+                        // todo: err handling, reporting
+                        console.log("null Region to delete");
+                      }
+                      else
+                      {
+                        snap.forEach(function(child) {
+                          child.ref.remove();
+                        });                        
+                      }
+                    });
+
+                    ////////////////////////////////
+                    ////////  Del: Img from db  ////
+                    ////////////////////////////////
+                    firebase.database().ref().child('/DA/img_date').orderByKey().equalTo(imgDateKey)
+                    .once('value', snap=>{
+                      if("null" === JSON.stringify(snap)) {
+                        // todo: err handling, reporting
+                        console.log("null Image to delete from db");
+                      }
+                      else
+                      {
+                        snap.forEach(function(child) {
+                          child.ref.remove();
+                        });                        
+                      }
+                    });
+
+                    /////////////////////////////////////
+                    ////////  Del: Img from Storage  ////
+                    /////////////////////////////////////
+                    let filePath = 'images/' + img_name;
+                    firebase.storage().ref(filePath).delete().then(function() {
+                      console.log('File deleted successfully');
+                    }).catch(function(error) {
+                      console.log('error occurred!');
+                    });
+
+
+                  }// End: else-branch of if(_url === _imgUrl)
+                });
+          });
+
+      };
+
+      var latestXImg = () => {
+        authVerification();
+
+        const imgs =  firebase.database().ref().child('/DA/img_date').orderByKey().limitToLast(10).once('value', snap=>{
+          // if("null" === JSON.stringify(snap)) return;
+          let urls = [];
+          snap.forEach(x => {
+            let aurl = x.val().url.replace("https://firebasestorage.googleapis.com", "")
+            let obj = {"url":aurl, "date":x.key};
+            urls.push(obj);
+          });
+          let result = {"urls":urls};
+          if (gameInstance)
+              gameInstance.SendMessage("ImgProxy", "LastUrlsCB", JSON.stringify(result));
+        });
+      }
+
+      var latestUnitQuery = () => {
+        authVerification();
+            firebase.database().ref().child('/DA/unit_date').orderByKey().limitToLast(1).once('value', snap=>{
+              let obj = {};
+              if("null" === JSON.stringify(snap)){
+                obj._p1 = {};
+                obj._p1.x = 0;
+                obj._p1.y = 0;
+                obj._p2 = {};
+                obj._p2.x = 0;
+                obj._p2.y = 0;
+                obj._uMagnitude = 0;
+                obj.dateKey = "";
+                obj._lastReqUnitUrl = "";
+              }else{
+                snap.forEach(s => {
+                  obj = s;
+                });
+              }
+            if (gameInstance)
+                gameInstance.SendMessage("UnitProxy", "LastUnitDS_CB", JSON.stringify(obj));
+          });   
+      };
+
+      var reqSaveUnitJSON = function(ujson){
+        ujson = JSON.parse(ujson);
+        authVerification();
+        let dn = Date.now();
+        ujson.dateKey = dn;
+        firebase.database().ref('/DA/unit_date').child(dn).set(ujson).then((x)=>{
+          firebase.database().ref().child('/DA/unit_date').orderByKey().equalTo(`${dn}`).once('value', snap=>{
+            let obj = {};
+            if("null" === JSON.stringify(snap)){
+                  obj._p1 = {};
+                  obj._p1.x = 0;
+                  obj._p1.y = 0;
+                  obj._p2 = {};
+                  obj._p2.x = 0;
+                  obj._p2.y = 0;
+                  obj._uMagnitude = 0;
+                  obj.dateKey = "";
+                  obj._lastReqUnitUrl = "";
+            }
+            else
+            {
+              snap.forEach(s => {
+                  obj = s;
+                });
+            }
+            if (gameInstance)
+                gameInstance.SendMessage("UnitProxy", "LastUnitDS_CB", JSON.stringify(obj));
+
+          }).catch((e)=>{// query error
+            console.log("Error: "+e);
+          });
+        }).catch((e)=>{// save error
+          console.log("Error: "+e);
+        });
+      }
+      var reqRegionsByUrl = (url) => {
+        firebase.database().ref('/DA/regions_name').orderByChild('_imgUrl').equalTo(url).once('value', snap=>{//limitToLast(100).
+          // if("null" === JSON.stringify(snap)) return;
+          let imgKeys = [];
+          let regions = [];          
+          if("null" === JSON.stringify(snap)){
+            // 
+          }else{
+            snap.forEach(s => {
+              imgKeys.push(s.key);
+            });
+            imgKeys.forEach(k => {
+              regions.push(snap.val()[`${k}`]);
+            });
+          }
+          let result = {"regions":regions, "url":url};
+          if (gameInstance)
+                gameInstance.SendMessage("RegionProxy", "RegionsByUrl_CB", JSON.stringify(result));
+        });
+      }
+
+      var reqSaveNewRegionDS = function(rName, rJSON){
+        rJSON = JSON.parse(rJSON);
+        authVerification();
+        let dn = Date.now();
+        rJSON['dateKey'] = dn;
+        firebase.database().ref('/DA/regions_name').child(rName).set(rJSON).then((x)=>{
+          firebase.database().ref().child('/DA/regions_name').orderByKey().equalTo(`${rName}`).once('value', snap=>{
+            let thekey = '';
+            snap.forEach(s => {
+              thekey = s.key;
+            });
+            if (gameInstance)
+            gameInstance.SendMessage("RegionProxy", "UpdatedRegion_CB", JSON.stringify(snap.val()[`${thekey}`]));
+          });
+        }).catch((e)=>{
+          // submit server fail to c#, a save-new-region-failed method on game obj
+          console.log("Error: "+e);
+        });
+      };
+
+      var showFileUpDialog = function(){
+        authVerification();
+        document.getElementById('doUpload').classList.remove('hideme');
+      };
+      var hideFileUpDialog = function(){
+        authVerification();
+        document.getElementById('doUpload').classList.add('hideme');
+      };
+
+      var logout = () => firebase.auth().signOut();
+
+      var login = function(login, password){
+        if(firebase){
+          var user = firebase.auth().currentUser;
+          if (user && gameInstance) {
+            gameInstance.SendMessage("HomeProxy", "LoginCB");
+            return;
+          }
+          firebase.auth().signInWithEmailAndPassword(login, password).catch(function (error) {
+            console.log(error.message);
+          });
+        }
+      };
+    </script>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+        // // The Firebase SDK is initialized and available here!
+        //
+        // firebase.auth().onAuthStateChanged(user => { });
+        // firebase.database().ref('/path/to/ref').on('value', snapshot => { });
+        // firebase.messaging().requestPermission().then(() => { });
+        // firebase.storage().ref('/path/to/ref').getDownloadURL().then(() => { });
+        //
+        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+
+
+
+      $('#doUpload').on('change', function (e) {
+        var user = firebase.auth().currentUser;
+
+        if (!user) {
+          alert('Please first login!');
+          return;
+        }
+
+        const image = e.target.files[0];
+        const storage = firebase.storage();
+        const uploadTask = storage.ref(`images/${image.name}`).put(image);
+        uploadTask.on(
+          "state_changed",
+          snapshot => {
+            const progress = Math.round(
+              (snapshot.bytesTransfered / snapshot.totalBytes) * 100
+            );
+          },
+          err => console.log(err),
+          () => {
+
+            storage
+              .ref("images")
+              .child(image.name)
+              .getDownloadURL()// the url on frbs storage, where you access the uploaded file
+              .then(url => {
+                let dn = Date.now();
+                firebase.database().ref('/DA/img_date').child(dn).set({url, img_name:image.name}).then(()=>{
+                  if(gameInstance){// in c# side when resaving in any table having url, you concatenate back
+                    
+                    const uproxy = url.replace("https://firebasestorage.googleapis.com", "");
+                    let jsn = {urls:[{url: uproxy, date: dn}]};
+                    gameInstance.SendMessage("ImgProxy", "LastUrlsCB", JSON.stringify(jsn));
+                  }
+                });
+              });
+          }
+        );
+      });
+
+
+        firebase.auth().onAuthStateChanged(user => {
+                if (user && gameInstance) {
+                  gameInstance.SendMessage("HomeProxy", "LoginCB");
+                } else if(gameInstance) {
+                  gameInstance.SendMessage("HomeProxy", "LogoutCB");
+                }
+                if(user) exportRegionsToCSV();//backup regions
+              });
+
+        try {
+          let app = firebase.app();
+          let features = ['auth', 'database', 'messaging', 'storage'].filter(feature => typeof app[feature] === 'function');
+        } catch (e) {
+          console.error(e);
+        }
+      });
+      
+    </script>
+
+<script src="TemplateData/UnityProgress.js"></script>  
+<script src="Build/UnityLoader.js"></script>
+<script>
+    var gameInstance = UnityLoader.instantiate("gameContainer", "Build/1.json");
+  </script>
+
+
+  </body>
+</html>

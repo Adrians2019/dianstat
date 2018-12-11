@@ -1,0 +1,14 @@
+{
+    "name": "PlayTests",
+    "references": [
+        "Zenject",
+        "Zenject-TestFramework",
+        "RootAsmDf"
+    ],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false
+}
