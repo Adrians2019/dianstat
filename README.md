@@ -7,4 +7,4 @@ An application that is used for a research project in Russia. An ecologist colle
 This app is now chosen as a demonstration application for a book on software development workflow. The book shows how rigorous sofware specification helps at the first step of development. Even though the software during the development course will deviate from the initial specification, it is necessary to have it done before jumping to code. The initial specification being regorous, helps to eliminate fundamental errors in the very early stage. It contributes to the first step, which is always the hardest. 
 
 # YouTube presentation
-[![Dianstat](http://img.youtube.com/vi/3cqaAM8k1YU/0.jpg)](http://www.youtube.com/watch?v=3cqaAM8k1YU)
+[![Dianstat](http://img.youtube.com/vi/bNj-G7LYNZs/0.jpg)](http://www.youtube.com/watch?v=bNj-G7LYNZs)
